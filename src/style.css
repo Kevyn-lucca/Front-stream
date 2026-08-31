@@ -1,0 +1,62 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500&display=swap");
+
+:root {
+  --bg: #0d1012;
+  --panel: #15191b;
+  --panel-raised: #1b2023;
+  --line: #262c2f;
+  --line-bright: #34393c;
+
+  --amber: #e8a33d;
+  --amber-dim: #8a6427;
+  --live: #e5473a;
+  --live-dim: #5c2620;
+  --green: #6fbf7a;
+
+  --text: #ecece7;
+  --text-muted: #8b9195;
+  --text-faint: #545a5d;
+
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-body: "Inter", sans-serif;
+
+  --radius: 3px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+::selection {
+  background: var(--amber);
+  color: #1a1305;
+}
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
