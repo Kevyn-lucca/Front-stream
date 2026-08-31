@@ -26,7 +26,7 @@ import {
 } from "./livekit.js";
 
 const IS_DEV = import.meta.env.DEV;
-const LOG = "[BigBoysCast]";
+const LOG = "[BigBrandingCasting]";
 
 function logError(...args) {
   if (IS_DEV) console.error(...args);
@@ -488,12 +488,12 @@ onErrorCaptured((err, instance, info) => {
 </script>
 
 <template>
-  <div class="app" role="main" aria-label="BigBoysCast">
+  <div class="app" role="main" aria-label="BigBrandingCasting">
     <div v-if="status !== 'conectado'" class="gate">
       <div class="gate-card">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
-          <span class="brand-name">BigBoysCast</span>
+          <span class="brand-name">BigBrandingCasting</span>
         </div>
         <p class="gate-lead">Entre em um canal de transmissão.</p>
 
@@ -568,7 +568,7 @@ onErrorCaptured((err, instance, info) => {
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
-          <span class="brand-name">BigBoysCast</span>
+          <span class="brand-name">BigBrandingCasting</span>
         </div>
         <div class="topbar-meta">
           <span class="channel-name">{{ nomeDaSala }}</span>
