@@ -25,7 +25,7 @@ function groupEndLog() {
   if (DEBUG) console.groupEnd();
 }
 
-async function pegarToken(room, identity) {
+async function pegarTokens(room, identity) {
   if (!TOKEN_SERVER) {
     throw new Error("VITE_TOKEN_SERVER_URL não está definida no .env.");
   }
@@ -47,16 +47,20 @@ async function pegarToken(room, identity) {
       );
     }
 
-    const { token } = await res.json();
-    if (!token) throw new Error("Token server respondeu sem campo 'token'.");
+    const { primary, fallback } = await res.json();
+    if (!primary?.url || !primary?.token) {
+      throw new Error("Token server respondeu sem 'primary' completo.");
+    }
+    if (!fallback?.url || !fallback?.token) {
+      throw new Error("Token server respondeu sem 'fallback' completo.");
+    }
 
-    return token;
+    return { primary, fallback };
   } catch (err) {
-    errLog(`${LOG} Falha ao obter token de ${TOKEN_SERVER}:`, err);
+    errLog(`${LOG} Falha ao obter tokens de ${TOKEN_SERVER}:`, err);
     throw err;
   }
 }
-
 export function isFirefox() {
   return /firefox/i.test(navigator.userAgent);
 }
@@ -131,18 +135,36 @@ export function criarSala() {
 
 // registra os listeners no room ANTES de chamar isso, senão perde quem já estava transmitindo antes de você entrar
 export async function conectarSala(room, nomeDaSala, identity) {
-  try {
-    const token = await pegarToken(nomeDaSala, identity);
-    const url = import.meta.env.VITE_LIVEKIT_URL;
-    if (!url) throw new Error("VITE_LIVEKIT_URL não está definida no .env.");
+  const TIMEOUT_MS = 8000;
 
-    await room.connect(url, token);
+  async function tentarConectar(url, token) {
+    await Promise.race([
+      room.connect(url, token),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout ao conectar")), TIMEOUT_MS),
+      ),
+    ]);
+  }
+
+  try {
+    const { primary, fallback } = await pegarTokens(nomeDaSala, identity);
+
+    try {
+      await tentarConectar(primary.url, primary.token);
+      log(`${LOG} Conectado via primário:`, primary.url);
+    } catch (err) {
+      warnLog(
+        `${LOG} Primário indisponível; tentando fallback:`,
+        primary.url,
+        err,
+      );
+      await tentarConectar(fallback.url, fallback.token);
+      log(`${LOG} Conectado via fallback:`, fallback.url);
+    }
   } catch (err) {
-    errLog(`${LOG} Falha ao conectar à sala "${nomeDaSala}":`, err);
     throw err;
   }
 }
-
 export function precisaDeLoopbackDeAudio() {
   const precisa = isFirefox() || isSafari();
   return precisa;
