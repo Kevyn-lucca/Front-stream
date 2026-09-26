@@ -34,7 +34,7 @@ async function pegarTokens(room, identity) {
     const res = await fetch(TOKEN_SERVER, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room, identity, canPublish: true }),
+      body: JSON.stringify({ room, identity }),
     });
     if (!res.ok) {
       const texto = await res.text().catch(() => "");
@@ -422,6 +422,15 @@ export async function iniciarTransmissao(
         videoEncoding,
       });
     } catch (err) {
+      if (err?.name === "PublishTrackError" && err?.status === 403) {
+        videoTrack.stop();
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error(
+          "O token LiveKit não permite publicar. Atualize/reinicie o token server para emitir tokens com canPublish habilitado e reconecte à sala.",
+          { cause: err },
+        );
+      }
+
       errLog(
         `${LOG} Falha ao publicar vídeo com encoding avançado, tentando fallback simples sem scalabilityMode:`,
         err,

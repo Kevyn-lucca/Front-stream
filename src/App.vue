@@ -9,6 +9,7 @@ import {
   onErrorCaptured,
 } from "vue";
 import { Track, RoomEvent } from "livekit-client";
+import MatrixRain from "./components/MatrixRain.vue";
 import {
   criarSala,
   conectarSala,
@@ -36,7 +37,32 @@ function logWarn(...args) {
   if (IS_DEV) console.warn(...args);
 }
 
-const REGEX_CAMPO = /^[a-zA-Z0-9_-]{1,32}$/;
+const CAMPO_INVALIDO = /[^a-zA-Z0-9_-]/;
+const CHAVE_SALAS_RECENTES = "bigbrandingcasting:salas-recentes";
+
+function campoValido(valor) {
+  return (
+    typeof valor === "string" &&
+    valor.length >= 1 &&
+    valor.length <= 32 &&
+    !CAMPO_INVALIDO.test(valor)
+  );
+}
+
+function normalizarSalasRecentes(salas) {
+  if (!Array.isArray(salas)) return [];
+  return [...new Set(salas.filter(campoValido))].slice(0, 4);
+}
+
+function carregarSalasRecentes() {
+  try {
+    const valor = localStorage.getItem(CHAVE_SALAS_RECENTES) || "[]";
+    if (valor.length > 4096) return [];
+    return normalizarSalasRecentes(JSON.parse(valor));
+  } catch {
+    return [];
+  }
+}
 
 function sanitizarEntrada(valor) {
   return valor.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
@@ -44,6 +70,7 @@ function sanitizarEntrada(valor) {
 
 const nomeDaSala = ref("");
 const meuNome = ref("");
+const salasRecentes = ref(carregarSalasRecentes());
 const status = ref("desconectado"); // 'desconectado' 'conectando'  'conectado'
 const transmitindo = ref(false);
 const volumeSaida = ref(1);
@@ -62,6 +89,7 @@ const precisaLoopback = precisaDeLoopbackDeAudio();
 const minhaPreview = shallowRef(null);
 const audioBloqueado = ref(false);
 const avisoSemAudio = ref(false);
+const avisoErroTransmissao = ref("");
 const avisoMobile = ref(false);
 const avisoEncerradoBrowser = ref(false);
 const erroValidacao = ref("");
@@ -74,13 +102,31 @@ const ehMobile =
   semSuporteATela;
 
 const camposValidos = computed(
-  () => REGEX_CAMPO.test(nomeDaSala.value) && REGEX_CAMPO.test(meuNome.value),
+  () => campoValido(nomeDaSala.value) && campoValido(meuNome.value),
 );
 
 function aoDigitarCampo(campo, evento) {
   const limpo = sanitizarEntrada(evento.target.value);
   if (campo === "sala") nomeDaSala.value = limpo;
   else meuNome.value = limpo;
+  erroValidacao.value = "";
+}
+
+function registrarSalaRecente(sala) {
+  if (!campoValido(sala)) return;
+  salasRecentes.value = normalizarSalasRecentes([sala, ...salasRecentes.value]);
+  try {
+    localStorage.setItem(
+      CHAVE_SALAS_RECENTES,
+      JSON.stringify(salasRecentes.value),
+    );
+  } catch (err) {
+    logWarn(`${LOG} Não foi possível salvar as salas recentes:`, err);
+  }
+}
+
+function selecionarSalaRecente(sala) {
+  nomeDaSala.value = sala;
   erroValidacao.value = "";
 }
 
@@ -214,6 +260,7 @@ async function conectar() {
     });
 
     await conectarSala(room, nomeDaSala.value, meuNome.value);
+    registrarSalaRecente(nomeDaSala.value);
     status.value = "conectado";
 
     room.startAudio().catch(() => {});
@@ -303,6 +350,7 @@ async function alternarTransmissao() {
   }
 
   if (!transmitindo.value) {
+    avisoErroTransmissao.value = "";
     try {
       if (!minhaPreview.value) {
         logWarn(`${LOG} Prévia não montada.`);
@@ -344,6 +392,10 @@ async function alternarTransmissao() {
     } catch (err) {
       logError(`${LOG} Erro ao iniciar transmissão:`, err);
       limparTransmissaoLocal();
+      avisoErroTransmissao.value =
+        err?.cause?.status === 403
+          ? "O token não tem permissão para transmitir. volte mais tarde"
+          : "Não foi possível iniciar a transmissão. Verifique a permissão de captura de tela e tente novamente.";
     }
   } else {
     try {
@@ -490,6 +542,9 @@ onErrorCaptured((err, instance, info) => {
 <template>
   <div class="app" role="main" aria-label="BigBrandingCasting">
     <div v-if="status !== 'conectado'" class="gate">
+      <div class="gate-matrix" aria-hidden="true">
+        <MatrixRain />
+      </div>
       <div class="gate-card">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
@@ -530,7 +585,29 @@ onErrorCaptured((err, instance, info) => {
             aria-label="Seu nome"
           />
         </label>
-
+        <section
+          v-if="salasRecentes.length"
+          class="recent-rooms"
+          aria-label="Salas recentes"
+        >
+          <div class="recent-rooms-heading">
+            <span class="mono muted">recentes</span>
+          </div>
+          <div class="recent-rooms-grid">
+            <button
+              v-for="(sala, index) in salasRecentes"
+              :key="sala"
+              class="recent-room"
+              :class="{ selected: nomeDaSala === sala }"
+              type="button"
+              @click="selecionarSalaRecente(sala)"
+              :aria-label="`Selecionar sala ${sala}`"
+            >
+              <span class="recent-room-name">{{ sala }}</span>
+              <span v-if="index === 0" class="recent-room-tag">última</span>
+            </button>
+          </div>
+        </section>
         <p v-if="erroValidacao" class="field-error mono">{{ erroValidacao }}</p>
         <p v-if="erroGlobal" class="field-error mono">{{ erroGlobal }}</p>
 
@@ -540,9 +617,7 @@ onErrorCaptured((err, instance, info) => {
       </div>
     </div>
 
-    <!-- ==================== SALA ==================== -->
     <div v-else class="room">
-      <!-- Banners de aviso -->
       <div v-if="audioBloqueado" class="audio-banner" @click="ativarAudio">
         Áudio bloqueado pelo navegador
       </div>
@@ -552,6 +627,14 @@ onErrorCaptured((err, instance, info) => {
         @click="avisoSemAudio = false"
       >
         Transmitindo sem áudio — nenhum dispositivo configurado
+      </div>
+      <div
+        v-if="avisoErroTransmissao"
+        class="audio-banner danger"
+        role="alert"
+        @click="avisoErroTransmissao = ''"
+      >
+        {{ avisoErroTransmissao }}
       </div>
       <div v-if="avisoMobile" class="audio-banner" @click="avisoMobile = false">
         📱 Transmissão de tela não é suportada em mobile. Use desktop/Chrome.
@@ -564,7 +647,6 @@ onErrorCaptured((err, instance, info) => {
         Transmissão encerrada pelo navegador.
       </div>
 
-      <!-- Topbar -->
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
@@ -586,7 +668,6 @@ onErrorCaptured((err, instance, info) => {
         </div>
       </header>
 
-      <!-- Controles -->
       <section class="control-strip">
         <button
           class="rec-btn"
@@ -663,7 +744,6 @@ onErrorCaptured((err, instance, info) => {
         </div>
       </section>
 
-      <!-- Prévia da própria transmissão -->
       <div v-show="transmitindo" class="preview-strip">
         <span class="preview-label mono muted">sua prévia</span>
         <div class="preview-video-wrap">
@@ -719,7 +799,6 @@ onErrorCaptured((err, instance, info) => {
         </div>
       </div>
 
-      <!-- Grade de streams -->
       <section class="grid" v-if="streams.length">
         <article v-for="stream in streams" :key="stream.id" class="tile">
           <div class="tile-video" :ref="anexarContainer(stream.id)">
@@ -893,6 +972,9 @@ body {
 
 /* tela de entrada */
 .gate {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   min-height: 100vh;
   min-height: 100dvh;
   display: grid;
@@ -908,10 +990,19 @@ body {
     ),
     var(--bg);
 }
+.gate-matrix {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+}
 .gate-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 360px;
-  background: var(--panel);
+  background: rgba(21, 25, 27, 0.88);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 24px;
@@ -923,6 +1014,72 @@ body {
   margin: -8px 0 0;
   font-size: 13px;
   color: var(--text-muted);
+}
+.recent-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -4px;
+}
+.recent-rooms-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-transform: uppercase;
+}
+.recent-rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.recent-room {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 9px;
+  color: var(--text-muted);
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+.recent-room:hover,
+.recent-room.selected {
+  color: var(--text);
+  border-color: var(--amber-dim);
+  background: var(--panel-raised);
+}
+.recent-room-mark {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--amber-dim);
+}
+.recent-room.selected .recent-room-mark {
+  background: var(--amber);
+}
+.recent-room-name {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-room-tag {
+  margin-left: auto;
+  color: var(--amber);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  flex: 0 0 auto;
 }
 .field {
   display: flex;
