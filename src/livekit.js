@@ -31,13 +31,9 @@ async function pegarTokens(room, identity) {
   }
 
   try {
-    const segredo = import.meta.env.VITE_TOKEN_SERVER_SECRET;
-    const headers = { "Content-Type": "application/json" };
-    if (segredo) headers["x-api-key"] = segredo;
-
     const res = await fetch(TOKEN_SERVER, {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ room, identity, canPublish: true }),
     });
     if (!res.ok) {
@@ -138,31 +134,57 @@ export async function conectarSala(room, nomeDaSala, identity) {
   const TIMEOUT_MS = 8000;
 
   async function tentarConectar(url, token) {
-    await Promise.race([
-      room.connect(url, token),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout ao conectar")), TIMEOUT_MS),
-      ),
-    ]);
+    const endpoint = new URL(url);
+    if (!["ws:", "wss:"].includes(endpoint.protocol)) {
+      throw new Error("O endereço do LiveKit precisa usar ws:// ou wss://.");
+    }
+    if (window.location.protocol === "https:" && endpoint.protocol !== "wss:") {
+      throw new Error(
+        "Uma página HTTPS só pode conectar ao LiveKit via wss://.",
+      );
+    }
+
+    let timeoutId;
+    try {
+      await Promise.race([
+        room.connect(url, token),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error(`Timeout após ${TIMEOUT_MS}ms`)),
+            TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  const { primary, fallback } = await pegarTokens(nomeDaSala, identity);
+
+  try {
+    await tentarConectar(primary.url, primary.token);
+    log(`${LOG} Conectado via primário:`, new URL(primary.url).host);
+    return;
+  } catch (primaryError) {
+    console.warn(
+      `${LOG} Primário falhou; cancelando a tentativa antes do fallback.`,
+      { endpoint: new URL(primary.url).host, error: primaryError.message },
+    );
+    await room.disconnect();
   }
 
   try {
-    const { primary, fallback } = await pegarTokens(nomeDaSala, identity);
-
-    try {
-      await tentarConectar(primary.url, primary.token);
-      log(`${LOG} Conectado via primário:`, primary.url);
-    } catch (err) {
-      warnLog(
-        `${LOG} Primário indisponível; tentando fallback:`,
-        primary.url,
-        err,
-      );
-      await tentarConectar(fallback.url, fallback.token);
-      log(`${LOG} Conectado via fallback:`, fallback.url);
-    }
-  } catch (err) {
-    throw err;
+    await tentarConectar(fallback.url, fallback.token);
+    console.info(`${LOG} Conectado via fallback:`, new URL(fallback.url).host);
+  } catch (fallbackError) {
+    await room.disconnect();
+    console.error(`${LOG} Primário e fallback falharam.`, {
+      primary: new URL(primary.url).host,
+      fallback: new URL(fallback.url).host,
+      error: fallbackError.message,
+    });
+    throw fallbackError;
   }
 }
 export function precisaDeLoopbackDeAudio() {
