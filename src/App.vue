@@ -39,6 +39,7 @@ function logWarn(...args) {
 
 const CAMPO_INVALIDO = /[^a-zA-Z0-9_-]/;
 const CHAVE_SALAS_RECENTES = "bigbrandingcasting:salas-recentes";
+const MAX_SALAS_RECENTES = 4;
 
 function campoValido(valor) {
   return (
@@ -51,14 +52,19 @@ function campoValido(valor) {
 
 function normalizarSalasRecentes(salas) {
   if (!Array.isArray(salas)) return [];
-  return [...new Set(salas.filter(campoValido))].slice(0, 4);
+  return [...new Set(salas.filter(campoValido))].slice(0, MAX_SALAS_RECENTES);
 }
 
 function carregarSalasRecentes() {
   try {
     const valor = localStorage.getItem(CHAVE_SALAS_RECENTES) || "[]";
     if (valor.length > 4096) return [];
-    return normalizarSalasRecentes(JSON.parse(valor));
+    const salasArmazenadas = JSON.parse(valor);
+    const salas = normalizarSalasRecentes(salasArmazenadas);
+    if (salas.length !== salasArmazenadas.length) {
+      localStorage.setItem(CHAVE_SALAS_RECENTES, JSON.stringify(salas));
+    }
+    return salas;
   } catch {
     return [];
   }
