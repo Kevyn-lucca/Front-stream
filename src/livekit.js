@@ -131,7 +131,7 @@ export function criarSala() {
 
 // registra os listeners no room ANTES de chamar isso, senão perde quem já estava transmitindo antes de você entrar
 export async function conectarSala(room, nomeDaSala, identity) {
-  const TIMEOUT_MS = 8000;
+  const TIMEOUT_MS = 4000;
 
   async function tentarConectar(url, token) {
     const endpoint = new URL(url);
