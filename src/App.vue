@@ -56,9 +56,11 @@ function normalizarSalasRecentes(salas) {
 
 function carregarSalasRecentes() {
   try {
-    const valor = localStorage.getItem(CHAVE_SALAS_RECENTES) || "[]";
-    if (valor.length > 4096) return [];
-    return normalizarSalasRecentes(JSON.parse(valor));
+    const valor = localStorage.getItem(CHAVE_SALAS_RECENTES);
+    if (!valor || valor.length > 4096) return [];
+    const parsed = JSON.parse(valor);
+    if (!Array.isArray(parsed)) return [];
+    return normalizarSalasRecentes(parsed);
   } catch {
     return [];
   }
@@ -114,12 +116,20 @@ function aoDigitarCampo(campo, evento) {
 
 function registrarSalaRecente(sala) {
   if (!campoValido(sala)) return;
-  salasRecentes.value = normalizarSalasRecentes([sala, ...salasRecentes.value]);
+  const novaLista = normalizarSalasRecentes([sala, ...salasRecentes.value]);
   try {
-    localStorage.setItem(
-      CHAVE_SALAS_RECENTES,
-      JSON.stringify(salasRecentes.value),
-    );
+    const serializado = JSON.stringify(novaLista);
+    if (serializado.length > 4096) {
+      logWarn(`${LOG} Lista de salas recentes muito grande, truncando.`);
+      salasRecentes.value = novaLista.slice(0, 2);
+      localStorage.setItem(
+        CHAVE_SALAS_RECENTES,
+        JSON.stringify(salasRecentes.value),
+      );
+    } else {
+      salasRecentes.value = novaLista;
+      localStorage.setItem(CHAVE_SALAS_RECENTES, serializado);
+    }
   } catch (err) {
     logWarn(`${LOG} Não foi possível salvar as salas recentes:`, err);
   }
@@ -218,6 +228,7 @@ async function conectar() {
   }
 
   erroValidacao.value = "";
+  erroGlobal.value = "";
   status.value = "conectando";
 
   try {
@@ -257,6 +268,16 @@ async function conectar() {
 
     room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
       audioBloqueado.value = !room.canPlaybackAudio;
+    });
+
+    room.on(RoomEvent.Disconnected, (reason) => {
+      if (status.value === "conectado") {
+        logWarn(`${LOG} Desconectado inesperadamente: ${reason}`);
+        erroGlobal.value = "Conexão perdida. Reconectando...";
+        setTimeout(() => {
+          if (status.value === "desconectado") conectar();
+        }, 3000);
+      }
     });
 
     await conectarSala(room, nomeDaSala.value, meuNome.value);

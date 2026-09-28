@@ -54,7 +54,12 @@ function draw(timestamp) {
   context.fillRect(0, 0, width, height);
   context.font = '13px "JetBrains Mono", monospace';
 
-  columns.forEach((row, index) => {
+  const halfColumns = Math.ceil(columns.length / 2);
+  for (let i = 0; i < halfColumns; i++) {
+    const index = i * 2;
+    if (index >= columns.length) break;
+
+    const row = columns[index];
     const x = index * 24;
     const y = row * 18;
     const glyph = glyphs[Math.floor(Math.random() * glyphs.length)];
@@ -66,7 +71,7 @@ function draw(timestamp) {
 
     if (y > height && Math.random() > 0.975) columns[index] = 0;
     else columns[index] += 0.28 + Math.random() * 0.36;
-  });
+  }
 }
 
 function startAnimation() {

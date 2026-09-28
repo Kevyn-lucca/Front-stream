@@ -31,11 +31,24 @@ async function pegarTokens(room, identity) {
   }
 
   try {
+    new URL(TOKEN_SERVER);
+  } catch {
+    throw new Error("VITE_TOKEN_SERVER_URL não é uma URL válida.");
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
     const res = await fetch(TOKEN_SERVER, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ room, identity }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+
     if (!res.ok) {
       const texto = await res.text().catch(() => "");
       throw new Error(
@@ -53,7 +66,11 @@ async function pegarTokens(room, identity) {
 
     return { primary, fallback };
   } catch (err) {
-    errLog(`${LOG} Falha ao obter tokens de ${TOKEN_SERVER}:`, err);
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Timeout ao conectar ao token server.');
+    }
+    errLog(`${LOG} Falha ao obter tokens:`, err.message);
     throw err;
   }
 }
@@ -164,26 +181,19 @@ export async function conectarSala(room, nomeDaSala, identity) {
 
   try {
     await tentarConectar(primary.url, primary.token);
-    log(`${LOG} Conectado via primário:`, new URL(primary.url).host);
+    log(`${LOG} Conectado via primário`);
     return;
   } catch (primaryError) {
-    console.warn(
-      `${LOG} Primário falhou; cancelando a tentativa antes do fallback.`,
-      { endpoint: new URL(primary.url).host, error: primaryError.message },
-    );
+    warnLog(`${LOG} Primário falhou; tentando fallback.`);
     await room.disconnect();
   }
 
   try {
     await tentarConectar(fallback.url, fallback.token);
-    console.info(`${LOG} Conectado via fallback:`, new URL(fallback.url).host);
+    log(`${LOG} Conectado via fallback`);
   } catch (fallbackError) {
     await room.disconnect();
-    console.error(`${LOG} Primário e fallback falharam.`, {
-      primary: new URL(primary.url).host,
-      fallback: new URL(fallback.url).host,
-      error: fallbackError.message,
-    });
+    errLog(`${LOG} Primário e fallback falharam.`);
     throw fallbackError;
   }
 }
